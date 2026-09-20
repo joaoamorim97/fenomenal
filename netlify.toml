@@ -1,0 +1,19 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[functions]
+  # esbuild empacota as dependências das functions
+  node_bundler = "esbuild"
+
+# generate-image-background roda como Background Function (config.background = true
+# no próprio arquivo), com até 15 min de execução — evita o limite de 10s do
+# plano gratuito. O resultado é gravado no Netlify Blobs e lido por generate-status.
+
+# Redireciona todas as rotas SPA para o index (client-side routing por estado).
+# As rotas /.netlify/functions/* são reservadas e não são afetadas por este redirect.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

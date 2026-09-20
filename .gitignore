@@ -1,0 +1,37 @@
+# dependencies
+node_modules
+.pnp
+.pnp.js
+
+# build
+dist
+dist-ssr
+*.local
+
+# env - NUNCA versionar chaves
+.env
+.env.*
+!.env.example
+
+# netlify
+.netlify
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs
+*.log
+
+# editor / os
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea
+Thumbs.db
+
+# typescript incremental build info
+*.tsbuildinfo
+
+# deno lockfile gerado pelo netlify dev (edge runtime) - não usado pelo projeto
+deno.lock
