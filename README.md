@@ -14,7 +14,7 @@ CELULAR → React + TS
    │
    ├─(2) POST { jobId } → generate-image-background (Background, até 15 min)
    │                     ├─ lê imagens do Blobs
-   │                     ├─ OpenAI (gpt-image-1-mini)
+   │                     ├─ OpenAI (gpt-image-1, input_fidelity high)
    │                     └─ grava resultado no Blobs
    │
    └─(3) polling → generate-status ← lê o resultado no Blobs
@@ -32,7 +32,7 @@ que as grava no **Netlify Blobs**; a Background é disparada só com o `jobId`
 - **Frontend:** React + TypeScript + Vite + Tailwind CSS + lucide-react
 - **Backend:** função síncrona de submit + Background Function + função de status (a chave da OpenAI vive só no servidor)
 - **Armazenamento temporário do resultado:** Netlify Blobs (nativo, sem config)
-- **Modelo de imagem:** `gpt-image-1-mini` (endpoint `images/edits`, `quality: low`)
+- **Modelo de imagem:** `gpt-image-1` com `input_fidelity: high` (endpoint `images/edits`) — preserva o rosto/identidade da pessoa. Configurável por env (o `gpt-image-1-mini` é mais barato, mas **não** preserva o rosto).
 - Sem banco de dados, sem login, sem Firebase/Supabase/AWS. Mobile-first (~390×844).
 
 ---
@@ -92,11 +92,18 @@ O arquivo `.env` está no `.gitignore` e **não deve ser versionado**.
 
 Variáveis opcionais (têm padrões sensatos para o MVP):
 
-| Variável              | Padrão        | Descrição                                  |
-| --------------------- | ------------- | ------------------------------------------ |
-| `OPENAI_API_KEY`      | —             | **Obrigatória.** Chave da OpenAI.          |
-| `TRYON_IMAGE_QUALITY` | `low`         | Qualidade da geração (`low` para gastar pouco). |
-| `TRYON_IMAGE_SIZE`    | `1024x1536`   | Resolução (retrato).                       |
+| Variável                | Padrão         | Descrição                                                                 |
+| ----------------------- | -------------- | ------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`        | —              | **Obrigatória.** Chave da OpenAI.                                         |
+| `TRYON_MODEL`           | `gpt-image-1`  | Modelo de imagem. Use `gpt-image-1-mini` para economizar (não preserva o rosto). |
+| `TRYON_INPUT_FIDELITY`  | `high`         | `high` preserva rosto/detalhes (só nos modelos completos; ignorado no `mini`). |
+| `TRYON_IMAGE_QUALITY`   | `low`          | Qualidade da geração (`low` para gastar pouco; `medium`/`high` para mais detalhe). |
+| `TRYON_IMAGE_SIZE`      | `1024x1536`    | Resolução (retrato).                                                      |
+
+> **Fidelidade do rosto x custo:** `gpt-image-1` + `input_fidelity: high` mantém a
+> mesma pessoa, mas custa mais que o `mini`. O `gpt-image-1-mini` **não** suporta
+> `input_fidelity: high` (a API retorna 400) e tende a alterar o rosto — por isso
+> o padrão é o `gpt-image-1`.
 
 ## 4. Como testar a geração
 
@@ -183,7 +190,9 @@ netlify.toml
   do produto é reduzida (máx. 1024px, JPEG) antes do envio, reduzindo custo e latência.
 - A geração só acontece ao tocar em **Experimentar este produto** — navegar no
   catálogo não consome nada.
-- `gpt-image-1-mini` com `quality: low` para manter o custo baixo no MVP.
+- `gpt-image-1` + `input_fidelity: high` para preservar o rosto; `quality: low`
+  para segurar o custo. Para economizar mais (abrindo mão da fidelidade do rosto),
+  defina `TRYON_MODEL=gpt-image-1-mini`.
 - O resultado é gravado no Netlify Blobs e **apagado** assim que o app o lê
   (o `generate-status` remove o blob ao entregar `done`/`error`), evitando acúmulo.
 

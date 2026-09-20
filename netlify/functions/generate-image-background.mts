@@ -18,9 +18,16 @@ import { getStore } from '@netlify/blobs';
  */
 
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/images/edits';
-const MODEL = 'gpt-image-1-mini';
+// Para PRESERVAR O ROSTO usamos gpt-image-1 com input_fidelity=high.
+// O gpt-image-1-mini NÃO suporta input_fidelity=high (a API retorna 400) e por
+// isso altera o rosto. Dá para voltar ao mini via env (mais barato, menos fiel).
+const MODEL = process.env.TRYON_MODEL || 'gpt-image-1';
 const IMAGE_SIZE = process.env.TRYON_IMAGE_SIZE || '1024x1536';
 const IMAGE_QUALITY = process.env.TRYON_IMAGE_QUALITY || 'low';
+// input_fidelity=high preserva rosto/identidade e detalhes das imagens de entrada.
+const INPUT_FIDELITY = process.env.TRYON_INPUT_FIDELITY || 'high';
+// input_fidelity=high só é suportado nos modelos completos, não no mini.
+const SUPPORTS_HIGH_FIDELITY = MODEL !== 'gpt-image-1-mini';
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const STORE_NAME = 'tryons';
 
@@ -121,6 +128,9 @@ export default async (req: Request, _context: Context) => {
     form.append('prompt', prompt);
     form.append('size', IMAGE_SIZE);
     form.append('quality', IMAGE_QUALITY);
+    if (INPUT_FIDELITY === 'high' && SUPPORTS_HIGH_FIDELITY) {
+      form.append('input_fidelity', 'high');
+    }
     form.append('n', '1');
     form.append(
       'image[]',
@@ -239,13 +249,16 @@ function buildPrompt(product: Product, hasProductImage: boolean): string {
 
   const parts: string[] = [];
   parts.push(
-    'Edite a PRIMEIRA imagem, que é a foto real de uma pessoa. Gere a MESMA pessoa vestindo a roupa indicada. Este é um provador virtual de moda.',
+    'Edite a PRIMEIRA imagem, que é a foto real de uma pessoa. A ÚNICA mudança permitida é trocar a roupa. Este é um provador virtual de moda.',
   );
   parts.push(
-    'PRESERVE fielmente, sem alterar: o rosto e a identidade facial da pessoa, o formato do rosto, os olhos, o nariz, a boca, o cabelo (cor, corte e textura), o tom de pele, as proporções e o tipo do corpo, a pose, o enquadramento, o fundo/cenário e a iluminação da foto original.',
+    'REGRA MAIS IMPORTANTE — O ROSTO: mantenha o rosto EXATAMENTE IGUAL ao da primeira imagem, pixel a pixel. Copie o mesmo rosto, sem redesenhar. Preserve com precisão a identidade facial, o formato do rosto, os olhos, as sobrancelhas, o nariz, a boca, o queixo, as orelhas, a expressão, a barba/pelos, sinais, marcas e a maquiagem. NÃO gere um rosto novo, NÃO gere um rosto "parecido" ou "inspirado": tem que ser a MESMA pessoa, reconhecível como idêntica à foto original.',
   );
   parts.push(
-    'NÃO troque a pessoa por outra, NÃO deixe a pessoa mais magra ou mais gorda, NÃO altere o rosto nem características pessoais. O resultado deve parecer a mesma pessoa da foto original, apenas com outra roupa.',
+    'PRESERVE também, sem alterar: o cabelo (cor, corte, textura e comprimento), o tom e a textura da pele, as proporções e o tipo do corpo, as mãos, a pose, o ângulo da cabeça, o enquadramento, o fundo/cenário e a iluminação da foto original.',
+  );
+  parts.push(
+    'NÃO troque a pessoa por outra, NÃO rejuvenesça nem envelheça, NÃO afine nem engorde o rosto ou o corpo, NÃO altere etnia, gênero ou idade. Se necessário, mantenha o rosto intacto e ajuste apenas a região do corpo onde fica a roupa.',
   );
   if (hasProductImage) {
     parts.push(
