@@ -44,18 +44,30 @@ export default async (req: Request, _context: Context) => {
 
   let jobId = '';
   try {
-    const body = (await req.json()) as {
-      jobId?: string;
-      userImage?: string;
-      productImage?: string;
-      product?: Product;
-    };
-    jobId = (body.jobId || '').trim();
+    const trigger = (await req.json()) as { jobId?: string };
+    jobId = (trigger.jobId || '').trim();
 
     if (!jobId) {
       // Sem jobId não há como o cliente recuperar o resultado.
       console.error('[generate-bg] jobId ausente');
       return;
+    }
+
+    // As imagens foram gravadas no Blobs pela função síncrona submit-tryon.
+    const input = (await store.get(`in_${jobId}`, { type: 'json' })) as {
+      userImage?: string;
+      productImage?: string | null;
+      product?: Product;
+    } | null;
+
+    if (!input) {
+      console.error('[generate-bg] input não encontrado no Blobs para', jobId);
+      return void (await save(store, jobId, {
+        status: 'error',
+        code: 'INVALID_INPUT',
+        error: 'Dados da geração não encontrados.',
+        updatedAt: Date.now(),
+      }));
     }
 
     await save(store, jobId, { status: 'processing', updatedAt: Date.now() });
@@ -71,7 +83,7 @@ export default async (req: Request, _context: Context) => {
       }));
     }
 
-    const userImage = parseDataUrl(body.userImage);
+    const userImage = parseDataUrl(input.userImage);
     if (!userImage) {
       return void (await save(store, jobId, {
         status: 'error',
@@ -89,7 +101,7 @@ export default async (req: Request, _context: Context) => {
       }));
     }
 
-    const productImage = parseDataUrl(body.productImage);
+    const productImage = parseDataUrl(input.productImage ?? undefined);
     if (productImage && productImage.bytes.byteLength > MAX_IMAGE_BYTES) {
       return void (await save(store, jobId, {
         status: 'error',
@@ -99,7 +111,10 @@ export default async (req: Request, _context: Context) => {
       }));
     }
 
-    const prompt = buildPrompt(body.product ?? {}, Boolean(productImage));
+    const prompt = buildPrompt(input.product ?? {}, Boolean(productImage));
+
+    // Já temos as imagens em memória; limpamos o input do Blobs.
+    await store.delete(`in_${jobId}`).catch(() => undefined);
 
     const form = new FormData();
     form.append('model', MODEL);

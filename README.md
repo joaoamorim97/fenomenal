@@ -10,22 +10,27 @@ Fluxo: **Foto → Produto → OpenAI → Imagem**
 ```
 CELULAR → React + TS
    │
-   ├─(1) POST → generate-image-background  (Background Function, até 15 min)
-   │                     │
-   │                     ├─ OpenAI (gpt-image-1-mini)
-   │                     └─ grava resultado no Netlify Blobs
+   ├─(1) POST imagens → submit-tryon (síncrona)  → grava no Netlify Blobs
    │
-   └─(2) polling → generate-status ← lê o resultado no Netlify Blobs
+   ├─(2) POST { jobId } → generate-image-background (Background, até 15 min)
+   │                     ├─ lê imagens do Blobs
+   │                     ├─ OpenAI (gpt-image-1-mini)
+   │                     └─ grava resultado no Blobs
+   │
+   └─(3) polling → generate-status ← lê o resultado no Blobs
 ```
 
-Por que Background Function? A geração leva ~12s e as Netlify Functions
-**síncronas** têm limite de **10s no plano gratuito**. Uma Background Function
-roda até 15 min: o app dispara o job (recebe `202` na hora), a função gera a
-imagem e grava no **Netlify Blobs**, e o app faz *polling* em `generate-status`
-até o resultado ficar pronto. Continua tudo serverless, sem banco de dados.
+Por que essa divisão? A geração leva ~12s e as Netlify Functions **síncronas**
+têm limite de **10s no plano gratuito** — daí a Background Function (roda até
+15 min). Mas a Background é invocada de forma **assíncrona**, cujo corpo de
+requisição é pequeno (~256 KB), o que não comporta as imagens. Por isso as
+imagens vão primeiro para a função **síncrona** `submit-tryon` (limite ~4,5 MB),
+que as grava no **Netlify Blobs**; a Background é disparada só com o `jobId`
+(corpo minúsculo), lê as imagens do Blobs, gera e grava o resultado; e o app faz
+*polling* em `generate-status`. Tudo serverless, sem banco de dados.
 
 - **Frontend:** React + TypeScript + Vite + Tailwind CSS + lucide-react
-- **Backend:** Netlify Background Function + função de status (a chave da OpenAI vive só no servidor)
+- **Backend:** função síncrona de submit + Background Function + função de status (a chave da OpenAI vive só no servidor)
 - **Armazenamento temporário do resultado:** Netlify Blobs (nativo, sem config)
 - **Modelo de imagem:** `gpt-image-1-mini` (endpoint `images/edits`, `quality: low`)
 - Sem banco de dados, sem login, sem Firebase/Supabase/AWS. Mobile-first (~390×844).
@@ -160,7 +165,8 @@ src/
   types/         tipagens compartilhadas
 netlify/
   functions/
-    generate-image-background.mts  (Background Function → OpenAI → Blobs)
+    submit-tryon.mts               (síncrona: grava as imagens no Blobs)
+    generate-image-background.mts  (Background: lê Blobs → OpenAI → grava resultado)
     generate-status.mts            (lê o resultado no Blobs; usado no polling)
 public/
   products/      imagens reais dos produtos (*.webp)

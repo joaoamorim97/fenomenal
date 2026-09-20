@@ -22,6 +22,7 @@ export function friendlyError(code?: string): string {
   return 'Algo deu errado ao gerar seu look. Tente novamente.';
 }
 
+const SUBMIT_ENDPOINT = '/.netlify/functions/submit-tryon';
 const START_ENDPOINT = '/.netlify/functions/generate-image-background';
 const STATUS_ENDPOINT = '/.netlify/functions/generate-status';
 
@@ -42,17 +43,50 @@ export async function generateTryOn(
 ): Promise<GenerateResponse> {
   const jobId = newJobId();
 
-  // 1) Dispara a background function (resposta 202 imediata).
+  // 1) Envia as imagens para a função SÍNCRONA, que as grava no Netlify Blobs.
+  //    (A Background Function não recebe imagens no corpo por causa do limite
+  //    de payload da invocação assíncrona.)
   try {
-    const res = await fetch(START_ENDPOINT, {
+    const res = await fetch(SUBMIT_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...payload, jobId }),
     });
 
+    if (res.status === 404) {
+      console.error('[generateTryOn] submit não encontrado (404).');
+      return { error: friendlyError('NOT_DEPLOYED'), code: 'NOT_DEPLOYED' };
+    }
+    if (res.status === 413) {
+      return { error: friendlyError('TOO_LARGE'), code: 'TOO_LARGE' };
+    }
+    if (!res.ok) {
+      let code = 'OPENAI_ERROR';
+      try {
+        const data = (await res.json()) as { code?: string };
+        if (data.code) code = data.code;
+      } catch {
+        /* ignore */
+      }
+      console.error('[generateTryOn] submit falhou:', res.status, code);
+      return { error: friendlyError(code), code };
+    }
+  } catch (err) {
+    console.error('[generateTryOn] erro de rede no submit:', err);
+    return { error: friendlyError('NETWORK'), code: 'NETWORK' };
+  }
+
+  // 2) Dispara a background function passando só o jobId (corpo minúsculo).
+  try {
+    const res = await fetch(START_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId }),
+    });
+
     // 202 = aceito (background). 200 também é aceitável.
     if (res.status === 404) {
-      console.error('[generateTryOn] função não encontrada (404).');
+      console.error('[generateTryOn] função de geração não encontrada (404).');
       return { error: friendlyError('NOT_DEPLOYED'), code: 'NOT_DEPLOYED' };
     }
     if (res.status !== 202 && res.status !== 200) {
