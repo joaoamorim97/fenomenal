@@ -1,16 +1,15 @@
 /**
  * Recolorização da roupa no cliente (SEM IA).
  *
- * Como isolar "a roupa" numa foto qualquer sem IA é difícil, usamos uma
- * heurística prática que funciona bem para as peças do provador:
- *  1. Amostramos a cor da roupa numa região central do torso.
- *  2. Crescemos uma máscara por similaridade de cor, restrita a uma faixa
- *     vertical do torso (nunca no rosto/cabelo, que ficam no topo da imagem).
- *  3. Recolorimos só os pixels da máscara com um "colorize" que PRESERVA a
- *     luminância (mantém dobras, sombras e brilhos do tecido).
- *
- * É uma visualização — não é perfeito para estampas complexas, mas dá um
- * resultado convincente em peças de cor sólida, sem custo de IA.
+ * 1. Amostramos a cor da roupa numa região central do torso.
+ * 2. Crescemos uma máscara por similaridade de cor — usando distância
+ *    NORMALIZADA pelo brilho, para incluir dobras/sombras da mesma cor e
+ *    excluir regiões de cor diferente (pele, fundo, toalha, etc.). Fica
+ *    restrita a uma faixa do torso, então rosto/cabelo NUNCA são afetados.
+ * 3. Recolorimos a máscara aplicando de fato a cor escolhida: usamos o tom
+ *    (hue/saturação) da paleta e centramos a luminosidade na luminosidade da
+ *    própria cor, preservando só a VARIAÇÃO (dobras/sombras). Assim a peça fica
+ *    realmente na cor da paleta, não só num tom levemente puxado.
  */
 
 export interface PaletteColor {
@@ -20,19 +19,19 @@ export interface PaletteColor {
 
 /** Paleta de cores para experimentação (visualização, não SKU de venda). */
 export const TRYON_PALETTE: PaletteColor[] = [
-  { name: 'Preto', hex: '#1a1a1a' },
-  { name: 'Branco', hex: '#eeeeee' },
+  { name: 'Preto', hex: '#141414' },
+  { name: 'Branco', hex: '#f0f0f0' },
   { name: 'Cinza', hex: '#8b8f94' },
-  { name: 'Vermelho', hex: '#b3202c' },
+  { name: 'Vermelho', hex: '#c1121f' },
   { name: 'Vinho', hex: '#6d1f2b' },
-  { name: 'Rosa', hex: '#d98aa6' },
-  { name: 'Laranja', hex: '#d5732b' },
-  { name: 'Amarelo', hex: '#d9b13b' },
-  { name: 'Verde', hex: '#2f7d4f' },
+  { name: 'Rosa', hex: '#e06aa0' },
+  { name: 'Laranja', hex: '#e0631f' },
+  { name: 'Amarelo', hex: '#e6b422' },
+  { name: 'Verde', hex: '#1f8f4d' },
   { name: 'Verde-militar', hex: '#4a5238' },
-  { name: 'Azul', hex: '#2f5fa6' },
-  { name: 'Azul-marinho', hex: '#20304f' },
-  { name: 'Roxo', hex: '#5b3a86' },
+  { name: 'Azul', hex: '#1f66c4' },
+  { name: 'Azul-marinho', hex: '#1c2b52' },
+  { name: 'Roxo', hex: '#6a3aa0' },
   { name: 'Bege', hex: '#cdb79e' },
 ];
 
@@ -73,41 +72,56 @@ function hexToRgb(hex: string): Rgb {
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
 }
 
+function lum(r: number, g: number, b: number): number {
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
 /**
- * Calcula a máscara da roupa (Uint8Array 0/1) por similaridade de cor a partir
- * de sementes no torso, restrita a uma faixa vertical (protege rosto/cabelo).
+ * Distância de cor NORMALIZADA pelo brilho: reescala o pixel para o mesmo
+ * brilho da referência antes de comparar. Assim uma dobra escura e uma parte
+ * iluminada da MESMA cor ficam próximas, mas cores diferentes ficam distantes.
  */
+function normalizedDist2(px: Rgb, ref: Rgb, refLum: number): number {
+  const pl = lum(px.r, px.g, px.b);
+  let factor = refLum / Math.max(pl, 10);
+  if (factor > 2.6) factor = 2.6;
+  if (factor < 0.4) factor = 0.4;
+  const sr = px.r * factor;
+  const sg = px.g * factor;
+  const sb = px.b * factor;
+  const dr = sr - ref.r;
+  const dg = sg - ref.g;
+  const db = sb - ref.b;
+  return dr * dr + dg * dg + db * db;
+}
+
 export function computeGarmentMask(
   { imageData, width, height }: LoadedImage,
-  threshold = 60,
+  threshold = 52,
 ): Uint8Array {
   const data = imageData.data;
   const mask = new Uint8Array(width * height);
 
   // Faixa do torso: ignora o topo (rosto/cabelo) e as bordas laterais.
-  const yTop = Math.floor(height * 0.3);
+  const yTop = Math.floor(height * 0.32);
   const yBottom = Math.floor(height * 0.99);
-  const xLeft = Math.floor(width * 0.06);
-  const xRight = Math.floor(width * 0.94);
+  const xLeft = Math.floor(width * 0.05);
+  const xRight = Math.floor(width * 0.95);
 
-  // Cor de referência = média de um retalho central do torso.
   const ref = averagePatch(data, width, Math.floor(width * 0.5), Math.floor(height * 0.55), 12);
-
+  const refLum = lum(ref.r, ref.g, ref.b);
   const thr2 = threshold * threshold;
 
-  // Region growing (flood fill) por similaridade à cor de referência.
   const seeds: Array<[number, number]> = [
     [0.5, 0.5],
     [0.5, 0.6],
     [0.44, 0.55],
     [0.56, 0.55],
-    [0.5, 0.7],
+    [0.5, 0.68],
   ];
   const stack: number[] = [];
   for (const [sx, sy] of seeds) {
-    const px = Math.floor(width * sx);
-    const py = Math.floor(height * sy);
-    stack.push(py * width + px);
+    stack.push(Math.floor(height * sy) * width + Math.floor(width * sx));
   }
 
   while (stack.length) {
@@ -117,10 +131,8 @@ export function computeGarmentMask(
     const y = (idx - x) / width;
     if (x < xLeft || x >= xRight || y < yTop || y >= yBottom) continue;
     const o = idx * 4;
-    const dr = data[o] - ref.r;
-    const dg = data[o + 1] - ref.g;
-    const db = data[o + 2] - ref.b;
-    if (dr * dr + dg * dg + db * db > thr2) continue;
+    const d2 = normalizedDist2({ r: data[o], g: data[o + 1], b: data[o + 2] }, ref, refLum);
+    if (d2 > thr2) continue;
     mask[idx] = 1;
     stack.push(idx - 1, idx + 1, idx - width, idx + width);
   }
@@ -152,43 +164,96 @@ function averagePatch(
   return { r: r / n, g: g / n, b: b / n };
 }
 
+/* ------------------------- conversões de cor ------------------------- */
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  const l = (max + min) / 2;
+  const d = max - min;
+  let s = 0;
+  if (d !== 0) {
+    s = d / (1 - Math.abs(2 * l - 1));
+    switch (max) {
+      case r:
+        h = ((g - b) / d) % 6;
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      default:
+        h = (r - g) / d + 4;
+    }
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  return [h, s, l];
+}
+
+function hslToRgb(h: number, s: number, l: number): Rgb {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return { r: (r + m) * 255, g: (g + m) * 255, b: (b + m) * 255 };
+}
+
 /**
- * Aplica a nova cor nos pixels da máscara, preservando a luminância original.
- * Retorna um dataURL (JPEG) da imagem recolorida.
+ * Aplica a cor escolhida nos pixels da máscara. A peça assume o TOM (hue/sat)
+ * da cor da paleta e a luminosidade fica centrada na luminosidade dessa cor,
+ * mantendo apenas a variação (dobras/sombras) da roupa original.
  */
 export function recolor(
   base: LoadedImage,
   mask: Uint8Array,
   hex: string,
-  strength = 0.85,
+  shading = 0.85,
 ): string {
   const { imageData, width, height } = base;
   const src = imageData.data;
-  const out = new Uint8ClampedArray(src); // cópia (não mutar o original)
+  const out = new Uint8ClampedArray(src);
+
   const t = hexToRgb(hex);
+  const [tH, tS, tL] = rgbToHsl(t.r, t.g, t.b);
+
+  // Luminosidade média da roupa (para centrar a variação).
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue;
+    const o = i * 4;
+    sum += lum(src[o], src[o + 1], src[o + 2]);
+    count++;
+  }
+  const meanL = count ? sum / count / 255 : 0.5;
+
+  // Saturação mínima para cores cromáticas aparecerem de verdade em peças escuras.
+  const outS = tS < 0.05 ? tS : Math.max(tS, 0.55);
 
   for (let i = 0; i < mask.length; i++) {
     if (!mask[i]) continue;
     const o = i * 4;
-    const l = (0.299 * src[o] + 0.587 * src[o + 1] + 0.114 * src[o + 2]) / 255;
-
-    let cr: number;
-    let cg: number;
-    let cb: number;
-    if (l < 0.5) {
-      const k = l * 2;
-      cr = t.r * k;
-      cg = t.g * k;
-      cb = t.b * k;
-    } else {
-      const k = (l - 0.5) * 2;
-      cr = t.r + (255 - t.r) * k;
-      cg = t.g + (255 - t.g) * k;
-      cb = t.b + (255 - t.b) * k;
-    }
-    out[o] = src[o] * (1 - strength) + cr * strength;
-    out[o + 1] = src[o + 1] * (1 - strength) + cg * strength;
-    out[o + 2] = src[o + 2] * (1 - strength) + cb * strength;
+    const pL = lum(src[o], src[o + 1], src[o + 2]) / 255;
+    // desloca em torno da luminosidade-alvo, preservando as dobras
+    let outL = tL + (pL - meanL) * shading;
+    if (outL < 0.05) outL = 0.05;
+    if (outL > 0.97) outL = 0.97;
+    const c = hslToRgb(tH, outS, outL);
+    out[o] = c.r;
+    out[o + 1] = c.g;
+    out[o + 2] = c.b;
   }
 
   const canvas = document.createElement('canvas');
@@ -200,11 +265,9 @@ export function recolor(
   return canvas.toDataURL('image/jpeg', 0.92);
 }
 
-/** true se a máscara cobre uma área plausível de roupa (evita recolor ruim). */
+/** true se a máscara cobre uma área plausível de roupa. */
 export function maskIsUsable(mask: Uint8Array): boolean {
   let count = 0;
   for (let i = 0; i < mask.length; i++) count += mask[i];
-  const ratio = count / mask.length;
-  // precisa cobrir pelo menos ~1.5% da imagem para valer a pena
-  return ratio > 0.015;
+  return count / mask.length > 0.015;
 }

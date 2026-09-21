@@ -249,16 +249,19 @@ function buildPrompt(product: Product, hasProductImage: boolean): string {
 
   const parts: string[] = [];
   parts.push(
-    'Edite a PRIMEIRA imagem, que é a foto real de uma pessoa. A ÚNICA mudança permitida é trocar a roupa. Este é um provador virtual de moda.',
+    'Edite a PRIMEIRA imagem, que é a foto real de uma pessoa. A ÚNICA coisa que você pode mudar é a ROUPA. Todo o resto deve permanecer idêntico à foto original. Este é um provador virtual de moda.',
   );
   parts.push(
-    'REGRA MAIS IMPORTANTE — O ROSTO: mantenha o rosto EXATAMENTE IGUAL ao da primeira imagem, pixel a pixel. Copie o mesmo rosto, sem redesenhar. Preserve com precisão a identidade facial, o formato do rosto, os olhos, as sobrancelhas, o nariz, a boca, o queixo, as orelhas, a expressão, a barba/pelos, sinais, marcas e a maquiagem. NÃO gere um rosto novo, NÃO gere um rosto "parecido" ou "inspirado": tem que ser a MESMA pessoa, reconhecível como idêntica à foto original.',
+    'REGRA ABSOLUTA E INEGOCIÁVEL — NÃO MEXA NO ROSTO: é PROIBIDO alterar, redesenhar, mover, suavizar, estilizar, "melhorar", distorcer ou substituir o rosto. Trate a área do rosto e da cabeça como uma zona travada/congelada: mantenha exatamente os mesmos pixels do rosto original. Preserve com fidelidade absoluta a identidade e todos os traços: formato do rosto, olhos, sobrancelhas, nariz, boca, lábios, queixo, mandíbula, bochechas, orelhas, expressão, rugas, barba e pelos faciais, sinais, pintas, cicatrizes e maquiagem. O rosto do resultado tem que ser reconhecível como EXATAMENTE a MESMA pessoa. NUNCA gere um rosto novo, "parecido", "inspirado", mais bonito, mais jovem ou mais simétrico.',
   );
   parts.push(
-    'PRESERVE também, sem alterar: o cabelo (cor, corte, textura e comprimento), o tom e a textura da pele, as proporções e o tipo do corpo, as mãos, a pose, o ângulo da cabeça, o enquadramento, o fundo/cenário e a iluminação da foto original.',
+    'É proibido deformar ou distorcer o rosto, a cabeça, o pescoço, as mãos e o corpo. Se houver qualquer conflito, priorize manter o rosto intacto acima de qualquer ajuste na roupa.',
   );
   parts.push(
-    'NÃO troque a pessoa por outra, NÃO rejuvenesça nem envelheça, NÃO afine nem engorde o rosto ou o corpo, NÃO altere etnia, gênero ou idade. Se necessário, mantenha o rosto intacto e ajuste apenas a região do corpo onde fica a roupa.',
+    'PRESERVE também, sem alterar: o cabelo (cor, corte, textura e comprimento), o tom e a textura da pele, as proporções e o tipo do corpo, as mãos e os dedos, a pose, o ângulo da cabeça, o enquadramento, o fundo/cenário, os reflexos e a iluminação da foto original.',
+  );
+  parts.push(
+    'NÃO troque a pessoa por outra, NÃO rejuvenesça nem envelheça, NÃO afine nem engorde o rosto ou o corpo, NÃO altere etnia, gênero ou idade. Altere APENAS a região do corpo onde fica a roupa, deixando o rosto e a cabeça exatamente como estão.',
   );
   if (hasProductImage) {
     parts.push(
