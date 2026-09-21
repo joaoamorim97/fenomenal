@@ -107,7 +107,6 @@ export default function App() {
           error={error}
           product={product}
           onTryAnother={() => go('catalog')}
-          onChooseColor={() => go('product')}
           onChangePhoto={() => go('photo')}
           onRetry={() => handleTryOn(product, color)}
           onBack={() => go('catalog')}

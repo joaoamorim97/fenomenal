@@ -223,11 +223,20 @@ IA usa essa foto como **referência visual** na geração.
 > versão em alta resolução (`_z`), com uma pausa entre as requisições. Para
 > rodar de novo / adicionar mais: `powershell -ExecutionPolicy Bypass -File scripts/fetch-images.ps1`.
 
-Os demais produtos (algumas jaquetas e polos que só apareciam em páginas de
-listagem, sem página dedicada na coleta) ficam com `image` vazio e exibem uma
-**ilustração vetorial da peça por categoria** (gerada em
-`src/utils/placeholder.ts`). Nesses casos a IA gera a partir da **descrição
-textual**. Para deixá-los com foto real, basta preencher o `image` deles também.
+O catálogo agora inclui **apenas produtos com foto real** — os itens que só
+tinham ilustração (sem imagem extraída) foram removidos. Para adicionar mais,
+rode o script de imagens e inclua o item no `products.json`.
+
+### Cores (recolorização, sem IA)
+
+Na tela de resultado há uma **paleta de cores** abaixo da imagem gerada. Ao
+tocar numa cor, a **roupa é recolorida no próprio navegador** (sem chamar a IA e
+sem custo): isolamos a peça na faixa do torso (o rosto/cabelo nunca são
+afetados) e aplicamos a cor preservando dobras e sombras. É uma **visualização**
+para experimentar cores — não representa os SKUs de cor vendidos (o site não
+expõe a paleta real por produto). A paleta some automaticamente se não for
+possível isolar a peça na imagem. Código em `src/utils/recolor.ts`.
+
 - **Cores e a maioria dos tamanhos.** Não estavam disponíveis de forma
   estruturada na coleta; foram deixados vazios em vez de inventados. Onde os
   tamanhos apareciam publicamente (ex.: kits e conjuntos), eles foram incluídos.
