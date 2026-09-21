@@ -32,7 +32,7 @@ que as grava no **Netlify Blobs**; a Background é disparada só com o `jobId`
 - **Frontend:** React + TypeScript + Vite + Tailwind CSS + lucide-react
 - **Backend:** função síncrona de submit + Background Function + função de status (a chave da OpenAI vive só no servidor)
 - **Armazenamento temporário do resultado:** Netlify Blobs (nativo, sem config)
-- **Modelo de imagem:** `gpt-image-1` com `input_fidelity: high` (endpoint `images/edits`) — preserva o rosto/identidade da pessoa. Configurável por env (o `gpt-image-1-mini` é mais barato, mas **não** preserva o rosto).
+- **Modelo de imagem:** `gpt-image-1.5` com `input_fidelity: high` (endpoint `images/edits`) — preserva o rosto/identidade e mãos. Configurável por env (o `gpt-image-1-mini` é mais barato, mas **não** preserva o rosto).
 - Sem banco de dados, sem login, sem Firebase/Supabase/AWS. Mobile-first (~390×844).
 
 ---
@@ -95,15 +95,15 @@ Variáveis opcionais (têm padrões sensatos para o MVP):
 | Variável                | Padrão         | Descrição                                                                 |
 | ----------------------- | -------------- | ------------------------------------------------------------------------- |
 | `OPENAI_API_KEY`        | —              | **Obrigatória.** Chave da OpenAI.                                         |
-| `TRYON_MODEL`           | `gpt-image-1`  | Modelo de imagem. Use `gpt-image-1-mini` para economizar (não preserva o rosto). |
+| `TRYON_MODEL`           | `gpt-image-1.5` | Modelo de imagem. `gpt-image-1.5` (melhor/mais barato que o `gpt-image-1`, que será descontinuado). Use `gpt-image-1-mini` para economizar (não preserva o rosto). |
 | `TRYON_INPUT_FIDELITY`  | `high`         | `high` preserva rosto/detalhes (só nos modelos completos; ignorado no `mini`). |
 | `TRYON_IMAGE_QUALITY`   | `medium`       | Qualidade da geração. `medium` reduz muito artefatos (mãos/dedos, rosto); `high` = máxima fidelidade (mais caro); `low` = mais barato, porém alucina mais. |
 | `TRYON_IMAGE_SIZE`      | `1024x1536`    | Resolução (retrato).                                                      |
 
-> **Fidelidade do rosto x custo:** `gpt-image-1` + `input_fidelity: high` mantém a
-> mesma pessoa, mas custa mais que o `mini`. O `gpt-image-1-mini` **não** suporta
+> **Fidelidade do rosto x custo:** `gpt-image-1.5` + `input_fidelity: high` mantém
+> a mesma pessoa. Custa mais que o `mini`, mas o `gpt-image-1-mini` **não** suporta
 > `input_fidelity: high` (a API retorna 400) e tende a alterar o rosto — por isso
-> o padrão é o `gpt-image-1`.
+> o padrão é o `gpt-image-1.5` (sucessor do `gpt-image-1`, que será descontinuado).
 
 ## 4. Como testar a geração
 
@@ -190,7 +190,7 @@ netlify.toml
   do produto é reduzida (máx. 1024px, JPEG) antes do envio, reduzindo custo e latência.
 - A geração só acontece ao tocar em **Experimentar este produto** — navegar no
   catálogo não consome nada.
-- `gpt-image-1` + `input_fidelity: high` + `quality: medium` para preservar o
+- `gpt-image-1.5` + `input_fidelity: high` + `quality: medium` para preservar o
   rosto/mãos e evitar artefatos (dedos extras, deformações). `high` dá o máximo
   de fidelidade (mais caro); `low` é o mais barato, porém alucina mais. Para
   economizar bastante (abrindo mão da fidelidade), defina `TRYON_MODEL=gpt-image-1-mini`

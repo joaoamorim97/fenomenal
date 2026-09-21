@@ -16,9 +16,8 @@ import { dataUrlToBlob } from '../utils/image';
 import {
   TRYON_PALETTE,
   loadImageData,
-  computeGarmentMask,
+  buildGarmentMask,
   recolor,
-  maskIsUsable,
   type LoadedImage,
 } from '../utils/recolor';
 
@@ -64,14 +63,14 @@ export default function ResultScreen({
     (async () => {
       try {
         const base = await loadImageData(image);
-        const mask = computeGarmentMask(base);
+        const { mask, usable } = buildGarmentMask(base);
         if (cancelled) return;
-        if (maskIsUsable(mask)) {
+        if (usable) {
           baseRef.current = base;
           maskRef.current = mask;
           setRecolorReady(true);
         } else {
-          console.warn('[ResultScreen] máscara da roupa insuficiente; paleta oculta.');
+          console.warn('[ResultScreen] não foi possível isolar a peça; paleta oculta.');
           setRecolorReady(false);
         }
       } catch (err) {

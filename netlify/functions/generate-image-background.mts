@@ -18,10 +18,11 @@ import { getStore } from '@netlify/blobs';
  */
 
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/images/edits';
-// Para PRESERVAR O ROSTO usamos gpt-image-1 com input_fidelity=high.
-// O gpt-image-1-mini NÃO suporta input_fidelity=high (a API retorna 400) e por
-// isso altera o rosto. Dá para voltar ao mini via env (mais barato, menos fiel).
-const MODEL = process.env.TRYON_MODEL || 'gpt-image-1';
+// gpt-image-1.5: sucessor do gpt-image-1 — melhor qualidade, saída mais barata
+// (US$32/1M vs US$40/1M) e suporta input_fidelity=high (preserva rosto/mãos).
+// O gpt-image-1 está sendo descontinuado. gpt-image-1-mini NÃO suporta
+// input_fidelity=high (altera o rosto). Tudo configurável via env.
+const MODEL = process.env.TRYON_MODEL || 'gpt-image-1.5';
 const IMAGE_SIZE = process.env.TRYON_IMAGE_SIZE || '1024x1536';
 // "medium" reduz muito artefatos/alucinações (mãos, dedos extras, rosto) frente
 // ao "low". Use "high" para o máximo de fidelidade (mais caro) ou "low" p/ custo.

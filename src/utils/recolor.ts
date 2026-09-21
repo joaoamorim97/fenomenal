@@ -1,15 +1,14 @@
 /**
- * Recolorização da roupa no cliente (SEM IA).
+ * Recolorização da roupa no cliente (SEM IA) — comportamento de "balde de tinta".
  *
- * 1. Amostramos a cor da roupa numa região central do torso.
- * 2. Crescemos uma máscara por similaridade de cor — usando distância
- *    NORMALIZADA pelo brilho, para incluir dobras/sombras da mesma cor e
- *    excluir regiões de cor diferente (pele, fundo, toalha, etc.). Fica
- *    restrita a uma faixa do torso, então rosto/cabelo NUNCA são afetados.
- * 3. Recolorimos a máscara aplicando de fato a cor escolhida: usamos o tom
- *    (hue/saturação) da paleta e centramos a luminosidade na luminosidade da
- *    própria cor, preservando só a VARIAÇÃO (dobras/sombras). Assim a peça fica
- *    realmente na cor da paleta, não só num tom levemente puxado.
+ * 1. Amostra a cor da roupa numa região do torso.
+ * 2. Cresce uma máscara por CONEXÃO (flood fill), incluindo só pixels vizinhos
+ *    de cor parecida com a semente — restrita a uma faixa do torso (o rosto e o
+ *    cabelo, no topo da imagem, nunca são afetados).
+ * 3. Se o preenchimento "vazar" (cobrir grande parte da imagem), reduz a
+ *    tolerância; se ainda vazar, a paleta é escondida (não recolore nada).
+ * 4. Recolore só a máscara aplicando de fato a cor escolhida (tom da paleta +
+ *    luminosidade centrada nessa cor), preservando dobras/sombras.
  */
 
 export interface PaletteColor {
@@ -47,7 +46,6 @@ export interface LoadedImage {
   height: number;
 }
 
-/** Carrega um dataURL/URL em ImageData num canvas offscreen. */
 export async function loadImageData(src: string): Promise<LoadedImage> {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const el = new Image();
@@ -76,48 +74,35 @@ function lum(r: number, g: number, b: number): number {
   return 0.299 * r + 0.587 * g + 0.114 * b;
 }
 
-/**
- * Distância de cor NORMALIZADA pelo brilho: reescala o pixel para o mesmo
- * brilho da referência antes de comparar. Assim uma dobra escura e uma parte
- * iluminada da MESMA cor ficam próximas, mas cores diferentes ficam distantes.
- */
-function normalizedDist2(px: Rgb, ref: Rgb, refLum: number): number {
-  const pl = lum(px.r, px.g, px.b);
-  let factor = refLum / Math.max(pl, 10);
-  if (factor > 2.6) factor = 2.6;
-  if (factor < 0.4) factor = 0.4;
-  const sr = px.r * factor;
-  const sg = px.g * factor;
-  const sb = px.b * factor;
-  const dr = sr - ref.r;
-  const dg = sg - ref.g;
-  const db = sb - ref.b;
-  return dr * dr + dg * dg + db * db;
-}
+// Faixa do torso (fração da imagem) — protege rosto/cabelo (topo) e bordas.
+const BAND = { top: 0.3, bottom: 0.99, left: 0.05, right: 0.95 };
 
+/**
+ * Flood fill por cor (balde de tinta) a partir de sementes no torso.
+ * Compara cada pixel com a cor de referência (tolerância em RGB) e cresce só
+ * por vizinhança conectada, dentro da faixa do torso.
+ */
 export function computeGarmentMask(
   { imageData, width, height }: LoadedImage,
-  threshold = 52,
+  threshold = 46,
 ): Uint8Array {
   const data = imageData.data;
   const mask = new Uint8Array(width * height);
 
-  // Faixa do torso: ignora o topo (rosto/cabelo) e as bordas laterais.
-  const yTop = Math.floor(height * 0.32);
-  const yBottom = Math.floor(height * 0.99);
-  const xLeft = Math.floor(width * 0.05);
-  const xRight = Math.floor(width * 0.95);
+  const yTop = Math.floor(height * BAND.top);
+  const yBottom = Math.floor(height * BAND.bottom);
+  const xLeft = Math.floor(width * BAND.left);
+  const xRight = Math.floor(width * BAND.right);
 
-  const ref = averagePatch(data, width, Math.floor(width * 0.5), Math.floor(height * 0.55), 12);
-  const refLum = lum(ref.r, ref.g, ref.b);
+  const ref = averagePatch(data, width, Math.floor(width * 0.5), Math.floor(height * 0.56), 10);
   const thr2 = threshold * threshold;
 
   const seeds: Array<[number, number]> = [
-    [0.5, 0.5],
-    [0.5, 0.6],
-    [0.44, 0.55],
-    [0.56, 0.55],
-    [0.5, 0.68],
+    [0.5, 0.56],
+    [0.46, 0.52],
+    [0.54, 0.52],
+    [0.5, 0.64],
+    [0.5, 0.72],
   ];
   const stack: number[] = [];
   for (const [sx, sy] of seeds) {
@@ -131,12 +116,44 @@ export function computeGarmentMask(
     const y = (idx - x) / width;
     if (x < xLeft || x >= xRight || y < yTop || y >= yBottom) continue;
     const o = idx * 4;
-    const d2 = normalizedDist2({ r: data[o], g: data[o + 1], b: data[o + 2] }, ref, refLum);
-    if (d2 > thr2) continue;
+    const dr = data[o] - ref.r;
+    const dg = data[o + 1] - ref.g;
+    const db = data[o + 2] - ref.b;
+    if (dr * dr + dg * dg + db * db > thr2) continue;
     mask[idx] = 1;
     stack.push(idx - 1, idx + 1, idx - width, idx + width);
   }
   return mask;
+}
+
+function maskCount(mask: Uint8Array): number {
+  let n = 0;
+  for (let i = 0; i < mask.length; i++) n += mask[i];
+  return n;
+}
+
+/**
+ * Escolhe automaticamente a melhor tolerância: começa alta e diminui enquanto
+ * o preenchimento estiver "vazando" (cobrindo grande parte da imagem). Retorna
+ * `usable=false` quando não dá para isolar a peça com segurança.
+ */
+export function buildGarmentMask(base: LoadedImage): {
+  mask: Uint8Array;
+  usable: boolean;
+} {
+  const total = base.width * base.height;
+  const MIN = 0.02; // pelo menos ~2% da imagem (achou a peça)
+  const MAX = 0.3; // no máximo ~30% (acima disso, vazou)
+
+  let fallback: Uint8Array | null = null;
+  for (const thr of [46, 38, 30, 24, 18, 13]) {
+    const mask = computeGarmentMask(base, thr);
+    const ratio = maskCount(mask) / total;
+    if (ratio >= MIN && ratio <= MAX) return { mask, usable: true };
+    if (ratio < MIN) fallback = mask; // pequena demais: guarda a maior tentativa
+  }
+  // Nenhuma tolerância isolou bem a peça.
+  return { mask: fallback ?? new Uint8Array(total), usable: false };
 }
 
 function averagePatch(
@@ -211,9 +228,9 @@ function hslToRgb(h: number, s: number, l: number): Rgb {
 }
 
 /**
- * Aplica a cor escolhida nos pixels da máscara. A peça assume o TOM (hue/sat)
- * da cor da paleta e a luminosidade fica centrada na luminosidade dessa cor,
- * mantendo apenas a variação (dobras/sombras) da roupa original.
+ * Recolore os pixels da máscara: a peça assume o tom (hue/sat) da cor escolhida
+ * e a luminosidade fica centrada na luminosidade dessa cor, preservando só a
+ * variação (dobras/sombras) da roupa original.
  */
 export function recolor(
   base: LoadedImage,
@@ -228,7 +245,6 @@ export function recolor(
   const t = hexToRgb(hex);
   const [tH, tS, tL] = rgbToHsl(t.r, t.g, t.b);
 
-  // Luminosidade média da roupa (para centrar a variação).
   let sum = 0;
   let count = 0;
   for (let i = 0; i < mask.length; i++) {
@@ -238,15 +254,12 @@ export function recolor(
     count++;
   }
   const meanL = count ? sum / count / 255 : 0.5;
-
-  // Saturação mínima para cores cromáticas aparecerem de verdade em peças escuras.
   const outS = tS < 0.05 ? tS : Math.max(tS, 0.55);
 
   for (let i = 0; i < mask.length; i++) {
     if (!mask[i]) continue;
     const o = i * 4;
     const pL = lum(src[o], src[o + 1], src[o + 2]) / 255;
-    // desloca em torno da luminosidade-alvo, preservando as dobras
     let outL = tL + (pL - meanL) * shading;
     if (outL < 0.05) outL = 0.05;
     if (outL > 0.97) outL = 0.97;
@@ -263,11 +276,4 @@ export function recolor(
   if (!ctx) throw new Error('canvas 2d indisponível');
   ctx.putImageData(new ImageData(out, width, height), 0, 0);
   return canvas.toDataURL('image/jpeg', 0.92);
-}
-
-/** true se a máscara cobre uma área plausível de roupa. */
-export function maskIsUsable(mask: Uint8Array): boolean {
-  let count = 0;
-  for (let i = 0; i < mask.length; i++) count += mask[i];
-  return count / mask.length > 0.015;
 }
