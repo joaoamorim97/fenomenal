@@ -23,7 +23,9 @@ const OPENAI_ENDPOINT = 'https://api.openai.com/v1/images/edits';
 // isso altera o rosto. Dá para voltar ao mini via env (mais barato, menos fiel).
 const MODEL = process.env.TRYON_MODEL || 'gpt-image-1';
 const IMAGE_SIZE = process.env.TRYON_IMAGE_SIZE || '1024x1536';
-const IMAGE_QUALITY = process.env.TRYON_IMAGE_QUALITY || 'low';
+// "medium" reduz muito artefatos/alucinações (mãos, dedos extras, rosto) frente
+// ao "low". Use "high" para o máximo de fidelidade (mais caro) ou "low" p/ custo.
+const IMAGE_QUALITY = process.env.TRYON_IMAGE_QUALITY || 'medium';
 // input_fidelity=high preserva rosto/identidade e detalhes das imagens de entrada.
 const INPUT_FIDELITY = process.env.TRYON_INPUT_FIDELITY || 'high';
 // input_fidelity=high só é suportado nos modelos completos, não no mini.
@@ -256,6 +258,12 @@ function buildPrompt(product: Product, hasProductImage: boolean): string {
   );
   parts.push(
     'É proibido deformar ou distorcer o rosto, a cabeça, o pescoço, as mãos e o corpo. Se houver qualquer conflito, priorize manter o rosto intacto acima de qualquer ajuste na roupa.',
+  );
+  parts.push(
+    'ANATOMIA CORRETA — MÃOS: preserve as mãos e os dedos EXATAMENTE como na foto original, com o número correto de dedos (cinco por mão). É terminantemente proibido adicionar dedos, remover dedos, fundir dedos, criar dedos extras ou membros extras, ou distorcer mãos, dedos, braços e pernas. Nada de deformidades anatômicas.',
+  );
+  parts.push(
+    'NÃO alucine: não invente objetos, acessórios, textos ou elementos que não existam na foto original; não altere o que a pessoa segura nas mãos. O resultado deve ser fotorrealista, natural e sem artefatos.',
   );
   parts.push(
     'PRESERVE também, sem alterar: o cabelo (cor, corte, textura e comprimento), o tom e a textura da pele, as proporções e o tipo do corpo, as mãos e os dedos, a pose, o ângulo da cabeça, o enquadramento, o fundo/cenário, os reflexos e a iluminação da foto original.',

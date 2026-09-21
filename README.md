@@ -97,7 +97,7 @@ Variáveis opcionais (têm padrões sensatos para o MVP):
 | `OPENAI_API_KEY`        | —              | **Obrigatória.** Chave da OpenAI.                                         |
 | `TRYON_MODEL`           | `gpt-image-1`  | Modelo de imagem. Use `gpt-image-1-mini` para economizar (não preserva o rosto). |
 | `TRYON_INPUT_FIDELITY`  | `high`         | `high` preserva rosto/detalhes (só nos modelos completos; ignorado no `mini`). |
-| `TRYON_IMAGE_QUALITY`   | `low`          | Qualidade da geração (`low` para gastar pouco; `medium`/`high` para mais detalhe). |
+| `TRYON_IMAGE_QUALITY`   | `medium`       | Qualidade da geração. `medium` reduz muito artefatos (mãos/dedos, rosto); `high` = máxima fidelidade (mais caro); `low` = mais barato, porém alucina mais. |
 | `TRYON_IMAGE_SIZE`      | `1024x1536`    | Resolução (retrato).                                                      |
 
 > **Fidelidade do rosto x custo:** `gpt-image-1` + `input_fidelity: high` mantém a
@@ -190,9 +190,11 @@ netlify.toml
   do produto é reduzida (máx. 1024px, JPEG) antes do envio, reduzindo custo e latência.
 - A geração só acontece ao tocar em **Experimentar este produto** — navegar no
   catálogo não consome nada.
-- `gpt-image-1` + `input_fidelity: high` para preservar o rosto; `quality: low`
-  para segurar o custo. Para economizar mais (abrindo mão da fidelidade do rosto),
-  defina `TRYON_MODEL=gpt-image-1-mini`.
+- `gpt-image-1` + `input_fidelity: high` + `quality: medium` para preservar o
+  rosto/mãos e evitar artefatos (dedos extras, deformações). `high` dá o máximo
+  de fidelidade (mais caro); `low` é o mais barato, porém alucina mais. Para
+  economizar bastante (abrindo mão da fidelidade), defina `TRYON_MODEL=gpt-image-1-mini`
+  e `TRYON_IMAGE_QUALITY=low`.
 - O resultado é gravado no Netlify Blobs e **apagado** assim que o app o lê
   (o `generate-status` remove o blob ao entregar `done`/`error`), evitando acúmulo.
 
