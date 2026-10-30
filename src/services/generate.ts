@@ -1,139 +1,121 @@
 import type { GenerateRequest, GenerateResponse } from '../types';
 
-/** Mensagens amigáveis por código de erro. */
 const FRIENDLY_ERRORS: Record<string, string> = {
-  MISSING_API_KEY:
-    'O serviço de IA ainda não está configurado. Tente novamente mais tarde.',
-  INVALID_INPUT: 'Não conseguimos ler sua foto. Tente enviar outra imagem.',
-  TOO_LARGE: 'A imagem enviada é muito grande. Escolha uma foto menor.',
-  OPENAI_ERROR:
-    'Nossa IA não conseguiu gerar o look agora. Tente novamente em instantes.',
+  MISSING_API_KEY: 'O serviço de IA ainda não está configurado.',
+  INVALID_INPUT: 'Não conseguimos preparar sua foto ou a peça. Tente novamente.',
+  TOO_LARGE: 'As imagens ficaram grandes demais. Escolha uma foto menor.',
+  OPENAI_ERROR: 'A IA não conseguiu finalizar este look. Tente novamente.',
   TIMEOUT: 'A geração demorou mais que o esperado. Tente novamente.',
-  RATE_LIMITED:
-    'Muitas solicitações agora há pouco. Aguarde um momento e tente de novo.',
-  NOT_DEPLOYED:
-    'O serviço de geração não está disponível neste ambiente. É necessário publicar as Netlify Functions.',
-  NETWORK:
-    'Sem conexão com o servidor. Verifique sua internet e tente novamente.',
+  RATE_LIMITED: 'Muitas solicitações agora. Aguarde um minuto e tente novamente.',
+  JOB_EXPIRED: 'Esta geração expirou. Toque em tentar novamente.',
+  STATUS_UNAVAILABLE: 'O serviço está temporariamente indisponível.',
+  NOT_DEPLOYED: 'O serviço de geração ainda não foi publicado neste ambiente.',
+  NETWORK: 'Sem conexão com o servidor. Verifique sua internet e tente novamente.',
 };
 
 export function friendlyError(code?: string): string {
-  if (code && FRIENDLY_ERRORS[code]) return FRIENDLY_ERRORS[code];
-  return 'Algo deu errado ao gerar seu look. Tente novamente.';
+  return (code && FRIENDLY_ERRORS[code]) || 'Algo deu errado ao gerar seu look. Tente novamente.';
 }
 
 const SUBMIT_ENDPOINT = '/.netlify/functions/submit-tryon';
-const START_ENDPOINT = '/.netlify/functions/generate-image-background';
 const STATUS_ENDPOINT = '/.netlify/functions/generate-status';
+const RESULT_ENDPOINT = '/.netlify/functions/tryon-result';
+const MAX_WAIT_MS = 180_000;
 
-const POLL_INTERVAL_MS = 2500;
-const MAX_WAIT_MS = 180_000; // 3 min
+interface JobCredentials { jobId: string; accessToken: string; }
 
-function newJobId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-  return `job-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      window.clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    }, { once: true });
+  });
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+async function parseErrorCode(response: Response): Promise<string> {
+  try {
+    const body = await response.json() as { code?: string };
+    return body.code || 'OPENAI_ERROR';
+  } catch {
+    return response.status === 404 ? 'NOT_DEPLOYED' : response.status === 413 ? 'TOO_LARGE' : 'OPENAI_ERROR';
+  }
+}
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
 export async function generateTryOn(
   payload: GenerateRequest,
+  signal?: AbortSignal,
 ): Promise<GenerateResponse> {
-  const jobId = newJobId();
+  let credentials: JobCredentials;
 
-  // 1) Envia as imagens para a função SÍNCRONA, que as grava no Netlify Blobs.
-  //    (A Background Function não recebe imagens no corpo por causa do limite
-  //    de payload da invocação assíncrona.)
   try {
-    const res = await fetch(SUBMIT_ENDPOINT, {
+    const response = await fetch(SUBMIT_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...payload, jobId }),
+      body: JSON.stringify(payload),
+      signal,
     });
-
-    if (res.status === 404) {
-      console.error('[generateTryOn] submit não encontrado (404).');
-      return { error: friendlyError('NOT_DEPLOYED'), code: 'NOT_DEPLOYED' };
-    }
-    if (res.status === 413) {
-      return { error: friendlyError('TOO_LARGE'), code: 'TOO_LARGE' };
-    }
-    if (!res.ok) {
-      let code = 'OPENAI_ERROR';
-      try {
-        const data = (await res.json()) as { code?: string };
-        if (data.code) code = data.code;
-      } catch {
-        /* ignore */
-      }
-      console.error('[generateTryOn] submit falhou:', res.status, code);
+    if (!response.ok) {
+      const code = await parseErrorCode(response);
+      console.error('[generateTryOn] submit', response.status, code);
       return { error: friendlyError(code), code };
     }
-  } catch (err) {
-    console.error('[generateTryOn] erro de rede no submit:', err);
+    credentials = await response.json() as JobCredentials;
+    if (!credentials.jobId || !credentials.accessToken) throw new Error('Credenciais do job ausentes.');
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return { code: 'ABORTED' };
+    console.error('[generateTryOn] submit/rede', error);
     return { error: friendlyError('NETWORK'), code: 'NETWORK' };
   }
 
-  // 2) Dispara a background function passando só o jobId (corpo minúsculo).
-  try {
-    const res = await fetch(START_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId }),
-    });
-
-    // 202 = aceito (background). 200 também é aceitável.
-    if (res.status === 404) {
-      console.error('[generateTryOn] função de geração não encontrada (404).');
-      return { error: friendlyError('NOT_DEPLOYED'), code: 'NOT_DEPLOYED' };
-    }
-    if (res.status !== 202 && res.status !== 200) {
-      console.error('[generateTryOn] disparo falhou:', res.status);
-      return { error: friendlyError('OPENAI_ERROR'), code: 'OPENAI_ERROR' };
-    }
-  } catch (err) {
-    console.error('[generateTryOn] erro de rede no disparo:', err);
-    return { error: friendlyError('NETWORK'), code: 'NETWORK' };
-  }
-
-  // 2) Faz polling do status até concluir, dar erro ou estourar o tempo.
   const deadline = Date.now() + MAX_WAIT_MS;
-  await sleep(POLL_INTERVAL_MS);
+  let interval = 1_800;
+  let consecutiveFailures = 0;
 
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(
-        `${STATUS_ENDPOINT}?jobId=${encodeURIComponent(jobId)}`,
-        { headers: { 'Cache-Control': 'no-store' } },
-      );
-      if (res.ok) {
-        const data = (await res.json()) as {
-          status: string;
-          image?: string;
-          error?: string;
-          code?: string;
-        };
-
-        if (data.status === 'done' && data.image) {
-          return { image: data.image };
+      await abortableSleep(interval, signal);
+      const status = await fetch(`${STATUS_ENDPOINT}?jobId=${encodeURIComponent(credentials.jobId)}`, {
+        headers: { 'X-Tryon-Token': credentials.accessToken, 'Cache-Control': 'no-store' },
+        signal,
+      });
+      if (!status.ok) {
+        consecutiveFailures++;
+        if (status.status === 404 || status.status === 410) return { error: friendlyError('JOB_EXPIRED'), code: 'JOB_EXPIRED' };
+        if (consecutiveFailures >= 4) return { error: friendlyError('STATUS_UNAVAILABLE'), code: 'STATUS_UNAVAILABLE' };
+      } else {
+        consecutiveFailures = 0;
+        const state = await status.json() as { status: string; code?: string };
+        if (state.status === 'error') {
+          return { error: friendlyError(state.code), code: state.code || 'OPENAI_ERROR' };
         }
-        if (data.status === 'error') {
-          return {
-            error: friendlyError(data.code),
-            code: data.code ?? 'OPENAI_ERROR',
-          };
+        if (state.status === 'done') {
+          const result = await fetch(`${RESULT_ENDPOINT}?jobId=${encodeURIComponent(credentials.jobId)}`, {
+            headers: { 'X-Tryon-Token': credentials.accessToken },
+            signal,
+          });
+          if (!result.ok) return { error: friendlyError('OPENAI_ERROR'), code: 'OPENAI_ERROR' };
+          return { image: await blobToDataUrl(await result.blob()) };
         }
-        // 'pending' | 'processing' -> continua aguardando
       }
-    } catch (err) {
-      // erro transitório de rede durante o polling: tenta de novo
-      console.warn('[generateTryOn] polling falhou, tentando de novo:', err);
+      interval = Math.min(Math.round(interval * 1.25), 5_000);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return { code: 'ABORTED' };
+      consecutiveFailures++;
+      console.warn('[generateTryOn] polling transitório', error);
+      if (consecutiveFailures >= 4) return { error: friendlyError('NETWORK'), code: 'NETWORK' };
     }
-    await sleep(POLL_INTERVAL_MS);
   }
 
-  console.error('[generateTryOn] timeout aguardando o resultado.');
   return { error: friendlyError('TIMEOUT'), code: 'TIMEOUT' };
 }

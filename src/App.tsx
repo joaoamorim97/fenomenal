@@ -1,114 +1,124 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import AppShell from './components/AppShell';
+import CatalogScreen from './pages/CatalogScreen';
+import GeneratingScreen from './pages/GeneratingScreen';
 import HomeScreen from './pages/HomeScreen';
 import PhotoScreen from './pages/PhotoScreen';
-import CatalogScreen from './pages/CatalogScreen';
 import ProductScreen from './pages/ProductScreen';
-import GeneratingScreen from './pages/GeneratingScreen';
 import ResultScreen from './pages/ResultScreen';
 import { generateTryOn } from './services/generate';
-import { hasRealImage } from './utils/placeholder';
 import type { Product, ScreenName } from './types';
 
 export default function App() {
   const [screen, setScreen] = useState<ScreenName>('home');
   const [photo, setPhoto] = useState<string | null>(null);
   const [product, setProduct] = useState<Product | null>(null);
-  const [color, setColor] = useState<string | null>(null);
-
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  const go = useCallback((s: ScreenName) => setScreen(s), []);
+  const attemptRef = useRef(0);
+  const controllerRef = useRef<AbortController | null>(null);
 
-  const runGeneration = useCallback(
-    async (p: Product, selectedColor: string | null) => {
-      if (!photo) {
-        go('photo');
-        return;
-      }
-      setError(null);
-      setResult(null);
-      setProduct(p);
-      setColor(selectedColor);
-      go('generating');
+  useEffect(() => () => controllerRef.current?.abort(), []);
 
-      // Só enviamos imagem do produto quando ela é REAL. A ilustração de marca
-      // não representa a peça, então nesse caso a IA gera a partir da descrição.
-      const productImage = hasRealImage(p)
-        ? await toDataUrl(p.image)
-        : undefined;
+  const go = useCallback((next: ScreenName) => setScreen(next), []);
+
+  const runGeneration = useCallback(async (selected: Product) => {
+    if (!photo || controllerRef.current) {
+      if (!photo) go('photo');
+      return;
+    }
+
+    const attempt = ++attemptRef.current;
+    const controller = new AbortController();
+    controllerRef.current = controller;
+
+    setIsGenerating(true);
+    setError(null);
+    setResult(null);
+    setProduct(selected);
+    go('generating');
+
+    try {
+      const productImage = await productToDataUrl(selected.image);
+      if (!productImage) throw new Error('Imagem real do produto indisponível.');
 
       const response = await generateTryOn({
         userImage: photo,
         productImage,
         product: {
-          name: p.name,
-          category: p.category,
-          description: p.description,
-          color: selectedColor ?? undefined,
+          id: selected.id,
+          name: selected.name,
+          category: selected.category,
+          description: selected.description,
         },
-      });
+      }, controller.signal);
 
+      if (attempt !== attemptRef.current || response.code === 'ABORTED') return;
       if (response.image) {
         setResult(response.image);
-        setError(null);
       } else {
-        setError(response.error ?? 'Não foi possível gerar seu look.');
+        setError(response.error || 'Não foi possível gerar seu look.');
       }
       go('result');
-    },
-    [photo, go],
-  );
+    } catch (generationError) {
+      if (attempt !== attemptRef.current || controller.signal.aborted) return;
+      console.error('[App] falha ao preparar a geração', generationError);
+      setError('Não foi possível preparar a foto e a peça. Tente novamente.');
+      go('result');
+    } finally {
+      if (attempt === attemptRef.current) {
+        setIsGenerating(false);
+        controllerRef.current = null;
+      }
+    }
+  }, [go, photo]);
 
-  const handleTryOn = useCallback(
-    (p: Product, selectedColor: string | null) => {
-      void runGeneration(p, selectedColor);
-    },
-    [runGeneration],
-  );
+  const restartWithPhoto = useCallback(() => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    attemptRef.current++;
+    setIsGenerating(false);
+    setResult(null);
+    setError(null);
+    go('photo');
+  }, [go]);
 
   return (
     <AppShell>
       {screen === 'home' && <HomeScreen onStart={() => go('photo')} />}
-
       {screen === 'photo' && (
         <PhotoScreen
           photo={photo}
-          onPhoto={(d) => setPhoto(d)}
+          onPhoto={(data) => { setPhoto(data); setResult(null); }}
           onBack={() => go('home')}
           onContinue={() => go('catalog')}
         />
       )}
-
       {screen === 'catalog' && (
         <CatalogScreen
           onBack={() => go(photo ? 'photo' : 'home')}
-          onSelectProduct={(p) => {
-            setProduct(p);
-            go('product');
-          }}
+          onSelectProduct={(selected) => { setProduct(selected); go('product'); }}
         />
       )}
-
       {screen === 'product' && product && (
         <ProductScreen
           product={product}
+          disabled={isGenerating}
           onBack={() => go('catalog')}
-          onTryOn={handleTryOn}
+          onTryOn={(selected) => { void runGeneration(selected); }}
         />
       )}
-
       {screen === 'generating' && product && <GeneratingScreen product={product} />}
-
       {screen === 'result' && product && (
         <ResultScreen
           image={result}
           error={error}
           product={product}
           onTryAnother={() => go('catalog')}
-          onChangePhoto={() => go('photo')}
-          onRetry={() => handleTryOn(product, color)}
+          onChangePhoto={restartWithPhoto}
+          onRetry={() => { void runGeneration(product); }}
           onBack={() => go('catalog')}
         />
       )}
@@ -116,36 +126,28 @@ export default function App() {
   );
 }
 
-/**
- * Converte qualquer imagem (URL http/https, dataURL ou SVG dataURL) em um
- * dataURL raster (PNG), para enviar como referência à Function.
- * Se falhar (ex.: imagem remota sem CORS), retorna undefined e o backend
- * gera apenas a partir da descrição textual.
- */
-async function toDataUrl(src: string): Promise<string | undefined> {
+/** Prepara uma referência limpa e leve da peça para a API. */
+async function productToDataUrl(src: string): Promise<string | undefined> {
   try {
     const img = await loadImage(src);
-    // Limita a dimensão e exporta em JPEG para manter o payload pequeno.
-    const maxDim = 1024;
-    let w = img.naturalWidth || 768;
-    let h = img.naturalHeight || 1024;
-    if (w > maxDim || h > maxDim) {
-      const scale = Math.min(maxDim / w, maxDim / h);
-      w = Math.round(w * scale);
-      h = Math.round(h * scale);
-    }
+    const maxDimension = 1024;
+    let width = img.naturalWidth || 768;
+    let height = img.naturalHeight || 1024;
+    const scale = Math.min(1, maxDimension / width, maxDimension / height);
+    width = Math.round(width * scale);
+    height = Math.round(height * scale);
+
     const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return undefined;
-    // Fundo branco para achatar eventual transparência ao converter em JPEG.
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, w, h);
-    ctx.drawImage(img, 0, 0, w, h);
-    return canvas.toDataURL('image/jpeg', 0.9);
-  } catch (err) {
-    console.warn('[App] não foi possível rasterizar a imagem do produto', err);
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) return undefined;
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, width, height);
+    context.drawImage(img, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', 0.88);
+  } catch (imageError) {
+    console.error('[App] referência do produto inválida', imageError);
     return undefined;
   }
 }
@@ -153,7 +155,6 @@ async function toDataUrl(src: string): Promise<string | undefined> {
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = reject;
     img.src = src;

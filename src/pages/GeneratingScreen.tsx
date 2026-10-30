@@ -1,65 +1,35 @@
 import { useEffect, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { ShieldCheck, Sparkles } from 'lucide-react';
+import BrandMark from '../components/BrandMark';
 import type { Product } from '../types';
-import { resolveProductImage } from '../utils/placeholder';
 
-interface GeneratingScreenProps {
-  product: Product;
-}
+interface GeneratingScreenProps { product: Product; }
 
-const MESSAGES = [
-  'Preparando seu look…',
-  'Ajustando o caimento da peça…',
-  'Cuidando dos detalhes…',
-  'Quase lá…',
-];
+const MESSAGES = ['Preparando seu look…', 'Aplicando a peça ao seu corpo…', 'Preservando seus detalhes…', 'Finalizando a experiência…'];
 
 export default function GeneratingScreen({ product }: GeneratingScreenProps) {
   const [messageIndex, setMessageIndex] = useState(0);
-  const img = resolveProductImage(product);
-
   useEffect(() => {
-    const id = setInterval(() => {
-      setMessageIndex((i) => (i + 1) % MESSAGES.length);
-    }, 3500);
-    return () => clearInterval(id);
+    const id = window.setInterval(() => setMessageIndex((i) => (i + 1) % MESSAGES.length), 3800);
+    return () => window.clearInterval(id);
   }, []);
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-ink px-8 text-center text-white">
-      <div className="relative">
-        <div className="h-40 w-32 overflow-hidden rounded-2xl border border-white/10">
-          <img src={img} alt={product.name} className="h-full w-full object-cover opacity-80" />
+    <main className="flex min-h-[100dvh] flex-col bg-white">
+      <div className="bg-brand px-4 py-2 text-center text-[10px] font-black uppercase tracking-[0.18em] text-white">Provador virtual Fenomenal</div>
+      <div className="flex justify-center border-b border-line px-5 py-4"><BrandMark /></div>
+      <div className="flex flex-1 flex-col items-center justify-center gap-7 px-7 py-10 text-center">
+        <div className="relative h-56 w-44 animate-breathe overflow-hidden rounded-sm border border-line bg-fog shadow-card">
+          <img src={product.image} alt="" className="h-full w-full object-cover object-top" />
+          <div className="pointer-events-none absolute inset-0 overflow-hidden"><div className="absolute inset-y-0 -left-full w-full animate-shimmer bg-gradient-to-r from-transparent via-white/55 to-transparent" /></div>
+          <span className="absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full bg-action text-white"><Sparkles className="h-5 w-5" /></span>
         </div>
-        {/* shimmer */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
-          <div className="absolute inset-y-0 -left-full w-full animate-shimmer bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+        <div aria-live="polite" role="status">
+          <h1 className="page-title text-2xl">{MESSAGES[messageIndex]}</h1>
+          <p className="mx-auto mt-3 max-w-xs text-sm leading-6 text-ink/60">A IA está criando uma única imagem com a peça escolhida. Isso costuma levar de 20 a 40 segundos.</p>
         </div>
-        <div className="absolute -bottom-3 -right-3 flex h-10 w-10 items-center justify-center rounded-full bg-accent text-ink">
-          <Sparkles className="h-5 w-5" />
-        </div>
+        <div className="flex items-center gap-2 rounded-md bg-brand-pale px-4 py-3 text-xs font-bold text-brand"><ShieldCheck className="h-4 w-4" /> Não feche esta tela durante a geração</div>
       </div>
-
-      <div className="flex flex-col gap-2">
-        <h2 className="font-display text-2xl font-semibold">{MESSAGES[messageIndex]}</h2>
-        <p className="text-sm text-white/60">
-          Estamos criando sua experiência Fenomenal.
-        </p>
-      </div>
-
-      <div className="flex items-center gap-2">
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            className="h-2 w-2 animate-pulse rounded-full bg-white/70"
-            style={{ animationDelay: `${i * 0.2}s` }}
-          />
-        ))}
-      </div>
-
-      <p className="max-w-xs text-xs text-white/40">
-        Isso pode levar alguns segundos. Não feche esta tela.
-      </p>
-    </div>
+    </main>
   );
 }

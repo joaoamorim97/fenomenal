@@ -4,15 +4,22 @@
   functions = "netlify/functions"
 
 [functions]
-  # esbuild empacota as dependências das functions
   node_bundler = "esbuild"
 
-# generate-image-background roda como Background Function (config.background = true
-# no próprio arquivo), com até 15 min de execução — evita o limite de 10s do
-# plano gratuito. O resultado é gravado no Netlify Blobs e lido por generate-status.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(self), microphone=(), geolocation=()"
+    Content-Security-Policy = "default-src 'self'; img-src 'self' data: blob: https://d1cbrteqb4r5tu.cloudfront.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
-# Redireciona todas as rotas SPA para o index (client-side routing por estado).
-# As rotas /.netlify/functions/* são reservadas e não são afetadas por este redirect.
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    Cache-Control = "no-store"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

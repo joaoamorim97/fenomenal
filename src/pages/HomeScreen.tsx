@@ -1,56 +1,39 @@
-import { Sparkles, ArrowRight } from 'lucide-react';
+import { ArrowRight, Camera, ShieldCheck, Sparkles } from 'lucide-react';
 import BrandMark from '../components/BrandMark';
 
-interface HomeScreenProps {
-  onStart: () => void;
-}
+interface HomeScreenProps { onStart: () => void; }
 
 export default function HomeScreen({ onStart }: HomeScreenProps) {
   return (
-    <div className="flex min-h-screen flex-col">
-      <div className="flex items-center justify-center px-4 py-5">
+    <main className="flex min-h-[100dvh] flex-col bg-white">
+      <div className="bg-brand px-4 py-2 text-center text-[10px] font-black uppercase tracking-[0.18em] text-white">
+        Fenomenal agora também no provador virtual
+      </div>
+      <header className="flex items-center justify-between border-b border-line px-5 py-4">
         <BrandMark />
-      </div>
+        <span className="rounded-full bg-action-pale px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-action">Experiência IA</span>
+      </header>
 
-      {/* Hero */}
-      <div className="relative flex flex-1 flex-col justify-end overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-ink via-ink-soft to-[#1a1a1a]" />
-        <div
-          className="absolute inset-0 opacity-30"
-          style={{
-            backgroundImage:
-              'radial-gradient(circle at 30% 20%, rgba(200,161,90,0.35), transparent 45%), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.08), transparent 40%)',
-          }}
-        />
-
-        <div className="relative z-10 flex flex-col gap-6 px-6 pb-10 pt-24 text-white animate-fade-in">
-          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/20 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-white/80">
-            <Sparkles className="h-3.5 w-3.5 text-accent" />
-            Provador virtual com IA
-          </span>
-
-          <h1 className="font-display text-5xl font-semibold leading-[1.05]">
-            Vista seu
-            <br />
-            próximo look.
-          </h1>
-
-          <p className="max-w-xs text-[15px] leading-relaxed text-white/70">
-            Envie uma foto sua e experimente virtualmente as peças da Fenomenal.
-            Nossa inteligência artificial cria a imagem de você usando o produto
-            escolhido.
-          </p>
-
-          <button onClick={onStart} className="btn-primary mt-2 w-full bg-white text-ink">
-            Experimentar agora
-            <ArrowRight className="h-4 w-4" />
+      <section className="relative min-h-[510px] flex-1 overflow-hidden bg-fog">
+        <img src="/products/069510-p17073.webp" alt="Moda Fenomenal" className="absolute inset-0 h-full w-full object-cover object-top" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/15 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 space-y-5 px-6 pb-8 text-white animate-fade-in">
+          <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-white/85">
+            <Sparkles className="h-4 w-4 text-[#ff619b]" />
+            Moda + tecnologia
+          </div>
+          <h1 className="max-w-sm text-[42px] font-black leading-[0.98] tracking-[-0.045em]">Vista seu próximo look.</h1>
+          <p className="max-w-sm text-[15px] leading-6 text-white/85">Envie uma foto e veja como as peças Fenomenal ficam em você antes de escolher.</p>
+          <button onClick={onStart} className="btn-action w-full">
+            Experimentar agora <ArrowRight className="h-4 w-4" />
           </button>
-
-          <p className="text-center text-xs text-white/40">
-            Sem cadastro. Sua foto é usada apenas para gerar o look.
-          </p>
         </div>
-      </div>
-    </div>
+      </section>
+
+      <section className="grid grid-cols-2 border-t border-line bg-white">
+        <div className="flex items-center gap-2 border-r border-line px-4 py-4 text-xs font-bold text-ink/70"><Camera className="h-4 w-4 text-brand" /> Foto ou câmera</div>
+        <div className="flex items-center gap-2 px-4 py-4 text-xs font-bold text-ink/70"><ShieldCheck className="h-4 w-4 text-brand" /> Sem cadastro</div>
+      </section>
+    </main>
   );
 }

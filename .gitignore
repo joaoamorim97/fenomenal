@@ -35,3 +35,7 @@ Thumbs.db
 
 # deno lockfile gerado pelo netlify dev (edge runtime) - não usado pelo projeto
 deno.lock
+
+# artefatos gerados pelo netlify dev
+netlify/functions/*.zip
+netlify/functions/manifest.json

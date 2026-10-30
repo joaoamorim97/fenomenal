@@ -1,17 +1,11 @@
 import type { ReactNode } from 'react';
 
-interface AppShellProps {
-  children: ReactNode;
-}
+interface AppShellProps { children: ReactNode; }
 
-/**
- * Container mobile-first: centraliza o conteúdo em uma coluna estreita
- * (ótima em ~390px) e mantém boa aparência no desktop.
- */
 export default function AppShell({ children }: AppShellProps) {
   return (
-    <div className="min-h-screen w-full bg-bone">
-      <div className="mx-auto flex min-h-screen w-full max-w-[480px] flex-col bg-bone shadow-soft sm:my-0">
+    <div className="min-h-[100dvh] w-full bg-fog lg:py-5">
+      <div className="mx-auto flex min-h-[100dvh] w-full max-w-[540px] flex-col overflow-hidden bg-paper shadow-soft lg:min-h-[calc(100dvh-2.5rem)] lg:rounded-lg">
         {children}
       </div>
     </div>

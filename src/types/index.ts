@@ -14,7 +14,7 @@ export interface Product {
   description: string;
   /** Preço formatado em BRL, ou null quando não disponível publicamente */
   price: string | null;
-  /** URL pública da imagem do produto. Vazio quando não pôde ser coletada. */
+  /** URL pública/local da imagem real do produto. */
   image: string;
   /** URL da página real do produto (ou da categoria real) na Fenomenal */
   productUrl: string;
@@ -32,15 +32,15 @@ export type ScreenName =
 
 /** Payload enviado para a Netlify Function */
 export interface GenerateRequest {
-  /** Foto do usuário em dataURL (base64) */
+  /** Foto do usuário em dataURL (base64). */
   userImage: string;
-  /** Imagem do produto em dataURL, quando disponível */
-  productImage?: string;
+  /** Imagem real do produto usada como referência visual. */
+  productImage: string;
   product: {
+    id: string;
     name: string;
     category: string;
     description: string;
-    color?: string;
   };
 }
 
